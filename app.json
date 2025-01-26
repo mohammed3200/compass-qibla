@@ -16,6 +16,9 @@
       ]
     ],
     "name": "Compass-Qibla",
-    "slug": "Compass-Qibla"
+    "slug": "Compass-Qibla",
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }
