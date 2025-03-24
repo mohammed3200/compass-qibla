@@ -4,7 +4,7 @@ import { Text, View } from "react-native";
 import { Image } from "expo-image";
 import { icons, LocationOfMecca } from "@/constants";
 import { Magnetometer } from "expo-sensors";
-import CompassHeading from 'react-native-compass-heading';
+// import CompassHeading from 'react-native-compass-heading';//
 
 export default function Page() {
   const [location, setLocation] = useState({ latitude: 0, longitude: 0 });
@@ -25,8 +25,8 @@ export default function Page() {
       const locationSubscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.Highest,
-          timeInterval: 1000,
-          distanceInterval: 7,
+          timeInterval: 3000,
+          distanceInterval: 10,
         },
         (newLocation) => {
           setLocation({
@@ -83,18 +83,18 @@ export default function Page() {
     };
   }, []);
 
-  useEffect(() => {
-    const updateHeading = (data) => {
-      setHeading(data.heading);
-    };
+  // useEffect(() => {
+  //   const updateHeading = (data) => {
+  //     setHeading(data.heading);
+  //   };
 
-    const options = { frequency: 1000 };
-    const headingID = CompassHeading.start(options, updateHeading);
+  //   const options = { frequency: 1000 };
+  //   // const headingID = CompassHeading.start(options, updateHeading);
     
-    return () => {
-      CompassHeading.stop(headingID);
-    };
-  },[])
+  //   return () => {
+  //     CompassHeading.stop(headingID);
+  //   };
+  // },[])
 
   // Calculate the rotation angle for the Qiblah arrow
   const qiblaRotationAngle = (qiblaAngle - compassHeading + 360) % 360;
