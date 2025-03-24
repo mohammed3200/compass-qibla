@@ -4,43 +4,52 @@ import { Text, View } from "react-native";
 import { Image } from "expo-image";
 import { icons, LocationOfMecca } from "@/constants";
 import { Magnetometer } from "expo-sensors";
-// import CompassHeading from 'react-native-compass-heading';//
 
 export default function Page() {
   const [location, setLocation] = useState({ latitude: 0, longitude: 0 });
   const [qiblaAngle, setQiblaAngle] = useState(0);
   const [compassHeading, setCompassHeading] = useState(0);
-  const [heading, setHeading] = useState(0);
-
+  const [hasPermissions, setHasPermissions] = useState(false);
+  const [error, setError] = useState("");
 
   // Get location permissions and watch for location updates
   useEffect(() => {
     const getPermissions = async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        console.log("Please grant location permissions");
-        return;
+      try {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setError("الرجاء منح صلاحيات الموقع");
+          return;
+        }
+        setHasPermissions(true);
+
+        // Get initial location
+        let currentLocation = await Location.getCurrentPositionAsync({});
+        setLocation({
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+        });
+
+        // Watch for location updates
+        const locationSubscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 5000,
+            distanceInterval: 10,
+          },
+          (newLocation) => {
+            setLocation({
+              latitude: newLocation.coords.latitude,
+              longitude: newLocation.coords.longitude,
+            });
+          }
+        );
+
+        return () => locationSubscription?.remove();
+      } catch (err) {
+        setError("حدث خطأ في جلب الموقع");
+        console.error(err);
       }
-
-      const locationSubscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.Highest,
-          timeInterval: 3000,
-          distanceInterval: 10,
-        },
-        (newLocation) => {
-          setLocation({
-            latitude: newLocation.coords.latitude,
-            longitude: newLocation.coords.longitude,
-          });
-        }
-      );
-
-      return () => {
-        if (locationSubscription) {
-          locationSubscription.remove();
-        }
-      };
     };
 
     getPermissions();
@@ -48,97 +57,105 @@ export default function Page() {
 
   // Calculate Qibla direction based on location
   useEffect(() => {
-    const CalculateTheDirectionOfTheQibla = () => {
-      const Q =
-        (180.0 / Math.PI) *
-        Math.atan2(
-          Math.sin(
-            (LocationOfMecca.longitude * Math.PI) / 180.0 -
-              (location.longitude * Math.PI) / 180.0
-          ),
-          Math.cos((location.latitude * Math.PI) / 180.0) *
-            Math.tan((LocationOfMecca.latitude * Math.PI) / 180.0) -
-            Math.sin((location.latitude * Math.PI) / 180.0) *
-              Math.cos(
-                (LocationOfMecca.longitude * Math.PI) / 180.0 -
-                  (location.longitude * Math.PI) / 180.0
-              )
+    if (!hasPermissions || !location.latitude || !location.longitude) return;
+
+    const calculateQiblaDirection = () => {
+      try {
+        // Convert degrees to radians
+        const phiK = (LocationOfMecca.latitude * Math.PI) / 180.0;
+        const lambdaK = (LocationOfMecca.longitude * Math.PI) / 180.0;
+        const phi = (location.latitude * Math.PI) / 180.0;
+        const lambda = (location.longitude * Math.PI) / 180.0;
+
+        // Calculate Qibla direction using spherical trigonometry
+        const qiblaDirection = Math.atan2(
+          Math.sin(lambdaK - lambda),
+          Math.cos(phi) * Math.tan(phiK) - 
+          Math.sin(phi) * Math.cos(lambdaK - lambda)
         );
-      setQiblaAngle(Q + 180);
+
+        // Convert to degrees and normalize to 0-360
+        let qiblaDegrees = (qiblaDirection * 180.0 / Math.PI + 360) % 360;
+        setQiblaAngle(qiblaDegrees);
+      } catch (err) {
+        setError("حدث خطأ في حساب اتجاه القبلة");
+        console.error(err);
+      }
     };
 
-    CalculateTheDirectionOfTheQibla();
-  }, [location]);
+    calculateQiblaDirection();
+  }, [location, hasPermissions]);
 
-  // Subscribe to magnetometer updates for compass heading
+  // Subscribe to magnetometer updates for device orientation
   useEffect(() => {
+    if (!hasPermissions) return;
+
+    Magnetometer.setUpdateInterval(100);
     const subscription = Magnetometer.addListener((data) => {
       const { x, y } = data;
-      const angle = Math.atan2(y, x) * (180 / Math.PI);
-      setCompassHeading(angle >= 0 ? angle : angle + 360);
+      // Calculate device orientation angle
+      let angle = Math.atan2(y, x) * (180 / Math.PI);
+      // Adjust for device rotation and normalize to 0-360
+      angle = (angle + 360 + 90) % 360; // Added 90 degrees compensation
+      setCompassHeading(angle);
     });
 
-    return () => {
-      subscription.remove();
-    };
-  }, []);
+    return () => subscription.remove();
+  }, [hasPermissions]);
 
-  // useEffect(() => {
-  //   const updateHeading = (data) => {
-  //     setHeading(data.heading);
-  //   };
-
-  //   const options = { frequency: 1000 };
-  //   // const headingID = CompassHeading.start(options, updateHeading);
-    
-  //   return () => {
-  //     CompassHeading.stop(headingID);
-  //   };
-  // },[])
-
-  // Calculate the rotation angle for the Qiblah arrow
-  const qiblaRotationAngle = (qiblaAngle - compassHeading + 360) % 360;
+  // Calculate how much the Qibla arrow should rotate
+  const arrowRotation = (qiblaAngle - compassHeading + 180) % 360;
 
   return (
     <View className="flex flex-1 items-center justify-center bg-black">
-      <View className="flex flex-col items-center gap-4">
-        {/* Qiblah Arrow */}
-        <Image
-          source={icons.CompassQibla} // Use an arrow image for Qiblah
-          alt="qibla-arrow"
-          testID="qibla-arrow" // Add testID for testing
-          style={{
-            width: 300,
-            height: 300,
-            transform: [{ rotate: `${qiblaRotationAngle}deg` }], // Corrected rotation
-            objectFit: "contain",
-          }}
-        />
+      {error ? (
+        <Text className="text-red-500 text-lg">{error}</Text>
+      ) : (
+        <View className="flex flex-col items-center gap-8">
+          {/* Qibla Compass */}
+          <View style={{ width: 300, height: 300 }}>
+            {/* Compass Background (optional) */}
+            <Image
+              source={icons.CompassNorth}
+              style={{
+                width: "100%",
+                height: "100%",
+                position: "absolute",
+              }}
+            />
+            
+            {/* Qibla Arrow */}
+            <Image
+              source={icons.CompassQibla}
+              style={{
+                width: "100%",
+                height: "100%",
+                transform: [{ rotate: `${arrowRotation}deg` }],
+              }}
+            />
+          </View>
 
-        {/* North Arrow */}
-        <Image
-          source={icons.CompassNorth} // Use an arrow image for North
-          alt="north-arrow"
-          testID="north-arrow" // Add testID for testing
-          style={{
-            width: 300,
-            height: 300,
-            transform: [{ rotate: `${compassHeading}deg` }], // Rotate to point North
-            objectFit: "contain",
-          }}
-        />
-
-        {/* Display Qibla and Compass Angles */}
-        <Text className="font-semibold text-lg text-gray-200">
-          Qibla Angle: {qiblaRotationAngle.toFixed(2)}°
-        </Text>
-        <Text className="font-semibold text-lg text-gray-200">
-          Compass Heading: {compassHeading.toFixed(2)}°
-        </Text>
-        <Text className="font-semibold text-lg text-gray-200">
-          Compass Heading: {heading.toFixed(2)}°
-        </Text>
-      </View>
+          {/* Qibla Information */}
+          <View className="items-center">
+            <Text className="text-white text-2xl font-bold">
+              اتجاه القبلة: {arrowRotation.toFixed(1)}°
+            </Text>
+            <Text className="text-gray-400 mt-2">
+              {getQiblaDirectionText(arrowRotation)}
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
+}
+
+// Helper function to get textual direction
+function getQiblaDirectionText(angle) {
+  const directions = [
+    "شمال", "شمال شرقي", "شرق", "جنوب شرقي",
+    "جنوب", "جنوب غربي", "غرب", "شمال غربي"
+  ];
+  const index = Math.round(angle / 45) % 8;
+  return directions[index];
 }
